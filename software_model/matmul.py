@@ -1,3 +1,7 @@
+import random
+
+from tqdm import tqdm
+
 from utils import size
 from typing import List, Tuple
 from hardware_model.device import Device
@@ -503,6 +507,7 @@ class Matmul(Operator):
                                 best_mapping = mapping
         elif compile_mode == "heuristic-GPU":
             i = 0
+            pbar = tqdm(total=6 * 3 * 4 * 4 * 6 * 6)
             for l2_tile_M in [64, 128, 256, 512, 1024, 2048]:
                 for l2_tile_N in [l2_tile_M // 2, l2_tile_M, l2_tile_M * 2]:
                     if K <= 12288:
@@ -529,6 +534,7 @@ class Matmul(Operator):
                             > pcb_module.compute_module.l2_size
                             // self.data_type.word_size
                         ):
+                            pbar.update(4 * 6 * 6)
                             continue
                         elif (
                             working_set_size
@@ -542,6 +548,7 @@ class Matmul(Operator):
 
                         for l1_tile_M in [32, 64, 128, 256]:
                             if l1_tile_M > min(l2_tile_M, l2_tile_N):
+                                pbar.update(6 * 6)
                                 continue
                             l1_tile_N = l1_tile_M
                             for l1_K_tiling_factor in [1, 2, 4, 8, 16, 32]:
@@ -554,6 +561,7 @@ class Matmul(Operator):
                                     // self.data_type.word_size
                                     // 2
                                 ):
+                                    pbar.update(6)
                                     continue
                                 l2_loop_order = "knm"
                                 l1_loop_order = "knm"
@@ -588,6 +596,7 @@ class Matmul(Operator):
                                     end = time.time()
                                     # if i % 1000 == 0:
                                     #     print(f"{i} simulation time: {end-start}")
+                                    pbar.update(1)
                                     if cycle_count < min_cycle_count:
                                         min_cycle_count = cycle_count
                                         best_mapping = mapping

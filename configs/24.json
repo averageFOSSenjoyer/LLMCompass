@@ -3,15 +3,15 @@
     "device_count": 24,
     "interconnect": {
         "link": {
-            "name": "NVLink3",
-            "bandwidth_per_direction_byte": 25e9,
-            "bandwidth_both_directions_byte": 50e9,
-            "latency_second": 8.92e-6,
+            "name": "Optical",
+            "bandwidth_per_direction_byte": 56e9,
+            "bandwidth_both_directions_byte": 112e9,
+            "latency_second": 12e-6,
             "flit_size_byte": 16,
             "header_size_byte": 16,
             "max_payload_size_byte": 256
         },
-        "link_count_per_device": 12,
+        "link_count_per_device": 23,
         "topology": "FC"
     },
     "device": {

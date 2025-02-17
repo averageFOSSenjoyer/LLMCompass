@@ -59,16 +59,22 @@ class AllReduceMultiPCB(CommunicationPrimitive):
                 + ceil(data_size_per_device / max_payload_size) * header_size
                 + data_size_per_device
             )
-            # stage 1: ring reduce
+            # # stage 1: ring reduce
+            # latency = (
+            #     edge_latency
+            #     + effective_data_size_per_device / edge_bandwidth_both_direction
+            # ) * (device_count - 1)
+            # # stage 2: broadcast
+            # latency += effective_data_size_per_device / edge_bandwidth_per_direction
+            # latency += (
+            #     data_size / interconnect_module.internal_link_bandwidth_per_direction
+            # )
+
+            # reduce-scatter + all-gather
             latency = (
-                edge_latency
-                + effective_data_size_per_device / edge_bandwidth_both_direction
-            ) * (device_count - 1)
-            # stage 2: broadcast
-            latency += effective_data_size_per_device / edge_bandwidth_per_direction
-            latency += (
-                data_size / interconnect_module.internal_link_bandwidth_per_direction
-            )
+                effective_data_size_per_device / edge_bandwidth_per_direction
+                + edge_latency
+            ) * 2
             self.latency = latency
             return latency
         elif interconnect_module.topology == TopologyType.RING:
