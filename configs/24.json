@@ -12,15 +12,15 @@
             "max_payload_size_byte": 256
         },
         "link_count_per_device": 23,
-        "topology": "FC"
+        "topology": "RING"
     },
     "device": {
-        "frequency_Hz": 1410e6,
+        "frequency_Hz": 1590e6,
         "compute_chiplet_count": 1,
         "compute_chiplet": {
-            "physical_core_count": 128,
-            "core_count": 108,
-            "process_node": "7nm",
+            "physical_core_count": 192,
+            "core_count": 132,
+            "process_node": "5nm",
             "core": {
                 "sublane_count": 4,
                 "systolic_array": {
@@ -44,7 +44,7 @@
                     "register_bitwidth":32,
                     "num_rdwr_ports":4
                 },
-                "SRAM_KB": 192
+                "SRAM_KB": 256
             }
         },
         "memory_protocol": "HBM2e",
@@ -56,17 +56,17 @@
             "PCIe5"
         ],
         "io": {
-            "process_node": "7nm",
+            "process_node": "5nm",
             "global_buffer_MB": 40,
             "physical_global_buffer_MB": 48,
             "global_buffer_bandwidth_per_cycle_byte": 5120,
             "memory_channel_physical_count": 6,
-            "memory_channel_active_count": 5,
-            "pin_count_per_channel": 1024,
+            "memory_channel_active_count": 6,
+            "pin_count_per_channel": 3000,
             "bandwidth_per_pin_bit": 3.2e9
         },
         "memory": {
-            "total_capacity_GB": 80
+            "total_capacity_GB": 141
         }
     }
 }

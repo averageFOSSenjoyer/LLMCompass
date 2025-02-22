@@ -1,4 +1,7 @@
+import multiprocessing
 import random
+from functools import reduce
+from queue import Empty
 
 from tqdm import tqdm
 
@@ -276,6 +279,91 @@ class Matmul(Operator):
 
         return list(permutations)
 
+    def _simulate(
+        self,
+        pcb_module,
+        l2_K_tiling_factor,
+        l2_tile_M,
+        l2_tile_N,
+        l1_tile_M,
+        l1_K_tiling_factor,
+        q,
+        pbar_q,
+    ):
+        l2_tile_K = ceil(
+            self.computational_graph.K / l2_K_tiling_factor
+        )
+        l2_tile_K = 2 ** floor(log2(l2_tile_K))
+        working_set_size = (
+                l2_tile_N * l2_tile_K
+                + l2_tile_M * l2_tile_K
+                + l2_tile_M * l2_tile_N
+        )
+
+        if (
+                working_set_size
+                > pcb_module.compute_module.l2_size
+                // self.data_type.word_size
+        ):
+            pbar_q.put_nowait(6)
+            return
+        elif (
+                working_set_size
+                <= pcb_module.compute_module.l2_size
+                // self.data_type.word_size
+                // 2
+        ):
+            is_l2_double_buffering = True
+        else:
+            is_l2_double_buffering = False
+
+        if l1_tile_M > min(l2_tile_M, l2_tile_N):
+            pbar_q.put_nowait(6)
+            return
+
+        l1_tile_N = l1_tile_M
+        l1_tile_K = ceil(l2_tile_K / l1_K_tiling_factor)
+        if (
+                l1_tile_M * l1_tile_N
+                + l1_tile_N * l1_tile_K
+                + l1_tile_M * l1_tile_K
+                > pcb_module.compute_module.core.SRAM_size
+                // self.data_type.word_size
+                // 2
+        ):
+            pbar_q.put_nowait(6)
+            return
+        l2_loop_order = "knm"
+        l1_loop_order = "knm"
+        for (
+                l0_M_tiling_factor,
+                l0_N_tiling_factor,
+                l0_K_tiling_factor,
+        ) in self.find_permutations(
+            pcb_module.compute_module.core.systolic_array_count
+        ):
+            mapping = self.Mapping(
+                l2_tile_M,
+                l2_tile_N,
+                l2_tile_K,
+                is_l2_double_buffering,
+                l1_tile_M,
+                l1_tile_N,
+                l1_tile_K,
+                l2_loop_order,
+                l1_loop_order,
+                l0_M_tiling_factor,
+                l0_N_tiling_factor,
+                l0_K_tiling_factor,
+            )
+            cycle_count = self.simulate(
+                self.computational_graph,
+                mapping,
+                pcb_module,
+            )
+            q.put_nowait((cycle_count, mapping))
+            pbar_q.put_nowait(1)
+
     def compile_and_simulate(
         self,
         pcb_module: Device,
@@ -519,87 +607,54 @@ class Matmul(Operator):
                             K // 4096,
                             K // 8192,
                         ]
-                    for l2_K_tiling_factor in l2_K_tiling_factor_list:
-                        l2_tile_K = ceil(
-                            self.computational_graph.K / l2_K_tiling_factor
-                        )
-                        l2_tile_K = 2 ** floor(log2(l2_tile_K))
-                        working_set_size = (
-                            l2_tile_N * l2_tile_K
-                            + l2_tile_M * l2_tile_K
-                            + l2_tile_M * l2_tile_N
-                        )
-                        if (
-                            working_set_size
-                            > pcb_module.compute_module.l2_size
-                            // self.data_type.word_size
-                        ):
-                            pbar.update(4 * 6 * 6)
-                            continue
-                        elif (
-                            working_set_size
-                            <= pcb_module.compute_module.l2_size
-                            // self.data_type.word_size
-                            // 2
-                        ):
-                            is_l2_double_buffering = True
-                        else:
-                            is_l2_double_buffering = False
 
-                        for l1_tile_M in [32, 64, 128, 256]:
-                            if l1_tile_M > min(l2_tile_M, l2_tile_N):
-                                pbar.update(6 * 6)
-                                continue
-                            l1_tile_N = l1_tile_M
-                            for l1_K_tiling_factor in [1, 2, 4, 8, 16, 32]:
-                                l1_tile_K = ceil(l2_tile_K / l1_K_tiling_factor)
-                                if (
-                                    l1_tile_M * l1_tile_N
-                                    + l1_tile_N * l1_tile_K
-                                    + l1_tile_M * l1_tile_K
-                                    > pcb_module.compute_module.core.SRAM_size
-                                    // self.data_type.word_size
-                                    // 2
-                                ):
-                                    pbar.update(6)
-                                    continue
-                                l2_loop_order = "knm"
-                                l1_loop_order = "knm"
-                                for (
-                                    l0_M_tiling_factor,
-                                    l0_N_tiling_factor,
-                                    l0_K_tiling_factor,
-                                ) in self.find_permutations(
-                                    pcb_module.compute_module.core.systolic_array_count
-                                ):
-                                    i += 1
-                                    start = time.time()
-                                    mapping = self.Mapping(
-                                        l2_tile_M,
-                                        l2_tile_N,
-                                        l2_tile_K,
-                                        is_l2_double_buffering,
-                                        l1_tile_M,
-                                        l1_tile_N,
-                                        l1_tile_K,
-                                        l2_loop_order,
-                                        l1_loop_order,
-                                        l0_M_tiling_factor,
-                                        l0_N_tiling_factor,
-                                        l0_K_tiling_factor,
-                                    )
-                                    cycle_count = self.simulate(
-                                        self.computational_graph,
-                                        mapping,
-                                        pcb_module,
-                                    )
-                                    end = time.time()
-                                    # if i % 1000 == 0:
-                                    #     print(f"{i} simulation time: {end-start}")
-                                    pbar.update(1)
-                                    if cycle_count < min_cycle_count:
-                                        min_cycle_count = cycle_count
-                                        best_mapping = mapping
+                    q = multiprocessing.Queue()
+                    pbar_q = multiprocessing.Queue()
+                    comp_proc = [
+                        multiprocessing.Process(
+                            target=self._simulate,
+                            args=(
+                                pcb_module,
+                                l2_K_tiling_factor,
+                                l2_tile_M,
+                                l2_tile_N,
+                                l1_tile_M,
+                                l1_K_tiling_factor,
+                                q,
+                                pbar_q,
+                            )
+                        )
+                        for l2_K_tiling_factor in l2_K_tiling_factor_list
+                        for l1_tile_M in [32, 64, 128, 256]
+                        for l1_K_tiling_factor in [1, 2, 4, 8, 16, 32]
+                    ]
+
+                    for proc in comp_proc:
+                        proc.start()
+
+                    while True:
+                        try:
+                            while True:
+                                cycle_count, mapping = q.get_nowait()
+                                if cycle_count < min_cycle_count:
+                                    min_cycle_count = cycle_count
+                                    best_mapping = mapping
+                        except Empty:
+                            pass
+
+                        try:
+                            while True:
+                                pbar_update = pbar_q.get_nowait()
+                                pbar.update(pbar_update)
+                        except Empty:
+                            pass
+
+                        if not reduce(lambda x, y: x or y, [proc.is_alive() for proc in comp_proc]):
+                            break
+
+                    for proc in comp_proc:
+                        proc.join()
+
             # print("total dse times:", i)
         elif compile_mode == "heuristic-TPU":
             l2_tile_M = self.computational_graph.M

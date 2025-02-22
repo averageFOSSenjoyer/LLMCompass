@@ -26,18 +26,19 @@ from cost_model.cost_model import calc_compute_chiplet_area_mm2, calc_io_die_are
 
 
 input_seq_length = 100000
-batch_size = 1024
-output_seq_length = 2000
+batch_size = 8
+output_seq_length = 2048
 arch_specs = read_architecture_template("configs/24.json")
+arch_specs["device_count"] = 1
 device_count = arch_specs["device_count"]
 model_init = TransformerBlockInitComputationTP(
-    d_model=65536,
+    d_model=16320*4,
     n_heads=120,
     device_count=device_count,
     data_type=data_type_dict["fp16"],
 )
 model_auto_regression = TransformerBlockAutoRegressionTP(
-    d_model=65536,
+    d_model=16320*4,
     n_heads=120,
     device_count=device_count,
     data_type=data_type_dict["fp16"],
@@ -50,44 +51,42 @@ _ = model_auto_regression(
     input_seq_length + output_seq_length,
 )
 
-def test_topo(topo, bw, lock):
-    arch_specs["interconnect"]["topology"] = topo
-    arch_specs["interconnect"]["link"]["bandwidth_per_direction_byte"] = bw / 2
-    arch_specs["interconnect"]["link"]["bandwidth_both_directions_byte"] = bw
+def test_num_hbm_tile(num_hbm_tile, lock):
+    arch_specs["interconnect"]["topology"] = "RING"
+    arch_specs["device"]["io"]["memory_channel_physical_count"] = num_hbm_tile * 6
+    arch_specs["device"]["io"]["memory_channel_active_count"] = num_hbm_tile * 6
+
     compute_area_mm2 = calc_compute_chiplet_area_mm2(arch_specs)
     io_area_mm2 = calc_io_die_area_mm2(arch_specs)
     print(
-        f"{topo}, {bw}, {compute_area_mm2}, {io_area_mm2}, {compute_area_mm2 + io_area_mm2}"
+        f"{num_hbm_tile}, {compute_area_mm2}, {io_area_mm2}, {compute_area_mm2 + io_area_mm2}"
     )
     system = template_to_system(arch_specs)
-    auto_regression_latency_simulated = model_auto_regression.roofline_model(
-        system, #"heuristic-GPU"
+    auto_regression_latency_simulated = model_auto_regression.compile_and_simulate(
+        system, "heuristic-GPU"
     )
     print(
-        f"{topo}, {bw}, {auto_regression_latency_simulated}"
+        f"{num_hbm_tile}, {auto_regression_latency_simulated}"
     )
-    init_latency_simulated = model_init.roofline_model(
-        system, #"heuristic-GPU"
-    )
-    print(
-        f"{topo}, {bw}, {init_latency_simulated}"
-    )
+    # init_latency_simulated = model_init.compile_and_simulate(system, "heuristic-GPU")
+    # print(
+    #     f"{num_hbm_tile}, {init_latency_simulated}"
+    # )
     with lock:
-        with open(f"ae/topo/topo_results_bs{batch_size}_init.csv", "a") as f:
+        # with open(f"ae/mem_bw/mem_bw_results_bs{batch_size}_init.csv", "a") as f:
+        #     f.write(
+        #         f"{num_hbm_tile}, {compute_area_mm2 + io_area_mm2}, {init_latency_simulated}, {model_init.simluate_log}\n"
+        #     )
+        with open(f"ae/mem_bw/mem_bw_results_bs{batch_size}_ot{output_seq_length}_ar.csv", "a") as f:
             f.write(
-                f"{topo}, {bw}, {compute_area_mm2 + io_area_mm2}, {init_latency_simulated}, {model_init.simluate_log}\n"
-            )
-        with open(f"ae/topo/topo_results_bs{batch_size}_ar.csv", "a") as f:
-            f.write(
-                f"{topo}, {bw}, {compute_area_mm2 + io_area_mm2}, {auto_regression_latency_simulated}, {model_auto_regression.simluate_log}\n"
+                f"{num_hbm_tile}, {compute_area_mm2 + io_area_mm2}, {auto_regression_latency_simulated}, {model_auto_regression.simluate_log}\n"
             )
 
 
 lock = Lock()
 processes = [
-    Process(target=test_topo, args=(topo, bw, lock))
-    for topo in ["FC", "RING"]
-    for bw in [7e9, 35e9, 63e9, 91e9, 119e9]
+    Process(target=test_num_hbm_tile, args=(num_hbm_tile, lock))
+    for num_hbm_tile in [i for i in range(1, 13)]
 ]
 
 try:

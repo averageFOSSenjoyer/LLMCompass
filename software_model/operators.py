@@ -46,7 +46,7 @@ class Reshape(Operator):
         self.output_shape = None
 
     def __call__(self, input: Tensor, output_shape: List[int]) -> Tensor:
-        assert input.size == size(output_shape)
+        assert input.size == size(output_shape), print(input.size, output_shape)
         self.flop_count = 0
         self.load_count = 0
         self.store_count = 0
